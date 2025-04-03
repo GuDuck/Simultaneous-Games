@@ -14,11 +14,22 @@ class FictitiousPlay(Agent):
         #
         # TODO: inicializar count con initial si no es None o, caso contrario, con valores random 
         #
+        if initial is not None:
+            for agent in game.agents:
+                self.count[agent] = initial[agent]
+        else:
+            for agent in game.agents:
+                self.count[agent] = np.random.rand(game.num_actions(agent))
+                
+        
 
         self.learned_policy: dict[AgentID, ndarray] = {}
         #
         # TODO: inicializar learned_policy usando de count
         # 
+        for agent in game.agents:
+            self.learned_policy[agent] = self.count[agent] / np.sum(self.count[agent])
+     
 
     def get_rewards(self) -> dict:
         g = self.game.clone()
@@ -27,7 +38,12 @@ class FictitiousPlay(Agent):
         #
         # TODO: calcular los rewards de agente para cada acción conjunta 
         # Ayuda: usar product(*agents_actions) de itertools para iterar sobre agents_actions
-        #s
+        #
+        for actions in product(*agents_actions):   
+            g.reset()
+            g.step(dict(zip(g.agents, actions)))
+            rewards[actions] = g.reward(self.agent)
+
         return rewards
     
     def get_utility(self):
@@ -37,6 +53,14 @@ class FictitiousPlay(Agent):
         # TODO: calcular la utilidad (valor) de cada acción de agente. 
         # Ayuda: iterar sobre rewards para cada acción de agente
         #
+        for actions, reward in rewards.items():
+            prob = 1
+            for agent in self.game.agents:
+                if agent != self.agent:
+                    prob *= self.learned_policy[agent][actions[int(agent[-1])]]
+            action = actions[int(self.agent[-1])]
+            utility[action] += reward * prob
+    
         return utility
     
     def bestresponse(self):
@@ -44,6 +68,9 @@ class FictitiousPlay(Agent):
         #
         # TODO: retornar la acción de mayor utilidad
         #
+        utility = self.get_utility()
+        a = np.argmax(utility)
+ 
         return a
      
     def update(self) -> None:
