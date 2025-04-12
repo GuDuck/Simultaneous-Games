@@ -21,17 +21,32 @@ class RegretMatching(Agent):
         a = actions[self.agent]
         g = self.game.clone()
         u = np.zeros(g.num_actions(self.agent), dtype=float)
-        # 
-        # TODO: calcular regrets
-        #
-        r = None
+        _, base_reward, _, _, _ = g.step(played_actions)
+        base_reward = base_reward[self.agent].item()
+        aux_played_actions = played_actions.copy()
+        for action in range(self.game._num_actions):
+            if action != a:
+                aux_played_actions[self.agent] = action
+                _, rewards, _, _, _ = g.step(aux_played_actions)
+                u[action] = rewards[self.agent].item()
+            else:
+                u[action] = base_reward
+        
+        r = np.array([float(u[action]-base_reward) for action in range(self.game._num_actions)])
         return r
+
     
     def regret_matching(self):
-        #
-        # TODO: calcular curr_policy y actualizar sum_policy
-        #
-        pass
+        cum_regrets_sum = 0
+        for action in range(self.game.num_actions(self.agent)):
+            cum_regrets_sum += max(0, self.cum_regrets[action])
+
+        for action in range(self.game.num_actions(self.agent)):
+            if cum_regrets_sum <= 0:
+                self.curr_policy[action] = 1/self.game.num_actions(self.agent)
+            else:
+                self.curr_policy[action] = max(0, self.cum_regrets[action]) / cum_regrets_sum
+            self.sum_policy[action] += self.curr_policy[action]
 
     def update(self) -> None:
         actions = self.game.observe(self.agent)
