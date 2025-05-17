@@ -20,8 +20,6 @@ class FictitiousPlay(Agent):
         else:
             for agent in game.agents:
                 self.count[agent] = np.random.rand(game.num_actions(agent))
-                
-        
 
         self.learned_policy: dict[AgentID, ndarray] = {}
         #
@@ -39,8 +37,7 @@ class FictitiousPlay(Agent):
         # TODO: calcular los rewards de agente para cada acción conjunta 
         # Ayuda: usar product(*agents_actions) de itertools para iterar sobre agents_actions
         #
-        for actions in product(*agents_actions):   
-            g.reset()
+        for actions in product(*agents_actions):
             g.step(dict(zip(g.agents, actions)))
             rewards[actions] = g.reward(self.agent)
 
@@ -75,6 +72,7 @@ class FictitiousPlay(Agent):
      
     def update(self) -> None:
         actions = self.game.observe(self.agent)
+        print(actions)
         if actions is None:
             return
         for agent in self.game.agents:

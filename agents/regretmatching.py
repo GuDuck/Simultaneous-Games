@@ -60,7 +60,7 @@ class RegretMatching(Agent):
 
     def action(self):
         self.update()
-        return np.argmax(np.random.multinomial(1, self.curr_policy, size=1))
+        return np.argmax(np.random.multinomial(1, self.curr_policy, size=1)).item()
     
     def policy(self):
         return self.learned_policy
