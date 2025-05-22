@@ -1,3 +1,4 @@
+
 import numpy as np
 import random
 import os
@@ -16,17 +17,17 @@ class IQLAgentConfig:
     start_epsilon: tasa inicial de exploración.
     min_epsilon: tasa mínima de exploración.
     episodes: cantidad total de episodios para planificar el decay.
-    lr: tasa de aprendizaje (alpha).
+    alpha: tasa de aprendizaje.
     gamma: factor de descuento.
-    exploring: indica si explora o no.
+    learn: indica si explora o no.
     seed: semilla aleatoria para reproducibilidad.
     """
     start_epsilon: float = 1.0
     min_epsilon: float = 0.01
-    episodes: int = 10000
-    lr: float = 1.0
+    epsilon_decay: float = 1.0
+    alpha: float = 1.0
     gamma: float = 0.9
-    exploring: bool = True
+    learn: bool = True
     seed: Optional[int] = None
 
 class IQLAgent(Agent):
@@ -40,98 +41,86 @@ class IQLAgent(Agent):
         game: SimultaneousGame,
         agent: AgentID,
         config: IQLAgentConfig,
-        initial: Optional[Dict[tuple, Dict[int, float]]] = None
+        initial: Optional[Dict[tuple, ndarray]] = None
     ) -> None:
         super().__init__(game=game, agent=agent)
-        # reproducibilidad para numpy y random
+
         if config.seed is not None:
             np.random.seed(config.seed)
             random.seed(config.seed)
 
-        # tabla Q como dict de dict
-        self.Q: Dict[tuple, Dict[int, float]] = {} if initial is None else initial
+        self.Q: Dict[tuple, ndarray] = {} if initial is None else initial
         self.last_state: Optional[tuple] = None
         self.last_action: Optional[int] = None
 
-        # hiperparámetros
-        self.lr = config.lr
+        self.alpha = config.alpha
         self.gamma = config.gamma
-        self.exploring = config.exploring
-        # exploración: start, mínimo y decay calculado
+        self.learn = config.learn
+
         self.epsilon = config.start_epsilon
         self.min_epsilon = config.min_epsilon
-        self.episodes = config.episodes
-        # decay por episodio
-        self.epsilon_decay = (config.min_epsilon / config.start_epsilon) ** (1.0 / config.episodes)
+        self.epsilon_decay = config.epsilon_decay
 
-        # acciones posibles según el espacio propio del agente
         idx = self.game.agents.index(self.agent)
         self.possible_actions = list(range(self.game.env.action_space[idx].n))
 
-    def reset(self, epsilon: float = None) -> None:
-        """Reinicia el agente y opcionalmente ajusta el epsilon inicial."""
-        if epsilon is not None:
-            self.epsilon = epsilon if self.exploring else 0.0
-            self.epsilon_decay = (self.min_epsilon / self.start_epsilon) ** (1.0 / self.episodes)
+    def reset(self) -> None:
         self.last_state = self.procesar_observacion(self.game.observe(self.agent))
 
-    def argmax_or_random(self, d: Dict[int, float]) -> int:
-        if d:
-            return max(d, key=d.get)
-        return random.choice(self.possible_actions)
+    def argmax_or_random(self, state) -> int:
+        if state not in self.Q:
+            na = len(self.possible_actions)
+            self.Q[state] = np.zeros(na) # np.ones(na) * (1/na)
 
-    def bestresponse(self, state: tuple) -> int:
-        """Epsilon-greedy usando Q almacenada."""
-        if state is None or (self.exploring and random.random() < self.epsilon):
+        q_values = self.Q[state]
+        best_choices = np.argwhere(q_values == np.max(q_values)).flatten()
+
+        return int(np.random.choice(best_choices))
+
+    def epsilon_greedy(self, state: tuple) -> int:
+        if self.learn and random.random() < self.epsilon:
             return random.choice(self.possible_actions)
-        return self.argmax_or_random(self.Q.get(state, {}))
+        return self.argmax_or_random(state)
 
     def update(self) -> None:
-
-        if not(self.exploring):
+        if not self.learn:
             return
 
         new_state = self.procesar_observacion(self.game.observe(self.agent))
         reward = self.game.reward(self.agent)
 
-        if self.last_state is not None and new_state is not None:
-            # valor futuro máximo
-            next_actions = self.Q.get(new_state, {})
-            V_sp = max(next_actions.values()) if next_actions else 0.0
+        if new_state is not None: # self.last_state is not None and 
+            if new_state not in self.Q:
+                self.Q[new_state] = np.zeros(len(self.possible_actions))
+            if self.last_state not in self.Q:
+                self.Q[self.last_state] = np.zeros(len(self.possible_actions))
 
-            # preparar acciones del estado anterior
-            state_actions = self.Q.setdefault(self.last_state, {})
-            old_q = state_actions.get(self.last_action, 0.0)
+            V_sp = np.max(self.Q[new_state])
 
-            # update de Q-learning
-            state_actions[self.last_action] = old_q + self.lr * (
-                reward + self.gamma * V_sp - old_q
+            self.Q[self.last_state][self.last_action] += self.alpha * (
+                reward + self.gamma * V_sp - self.Q[self.last_state][self.last_action]
             )
 
-        # decaimiento de epsilon por episodio
-        if self.exploring:
-            self.epsilon = max(self.min_epsilon, self.epsilon * self.epsilon_decay)
-
-        # actualizar estado previo
-        self.last_state = new_state
-
     def action(self) -> int:
-        self.last_action = self.bestresponse(self.last_state)
+
+        self.last_state = self.procesar_observacion(self.game.observe(self.agent))
+        self.last_action = self.epsilon_greedy(self.last_state)
+
+        if self.learn:
+            self.epsilon = max(self.min_epsilon, self.epsilon * (self.epsilon_decay))
+
         return self.last_action
 
     def procesar_observacion(self, observation: Optional[ndarray]) -> Optional[tuple]:
         if observation is None:
             return None
-        mask = (np.arange(1, len(observation) + 1) % 3) != 0
-        return tuple(observation[mask])
+        return tuple(observation.astype(np.int32))
 
     def save_q(self, path: str) -> None:
-        """Guarda la tabla Q en disco como pickle de un dict."""
         with open(path, "wb") as f:
             pickle.dump(self.Q, f)
 
     def load_q(self, path: str) -> None:
-        """Carga tabla Q desde pickle, si existe."""
         if os.path.exists(path):
             with open(path, "rb") as f:
                 self.Q = pickle.load(f)

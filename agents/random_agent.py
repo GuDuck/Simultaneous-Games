@@ -8,7 +8,7 @@ class RandomAgent(Agent):
         super().__init__(game=game, agent=agent)
         np.random.seed(seed=seed)
         if initial is None:
-            self._policy = np.full(self.game.num_actions(self.agent), 1/self.game.num_actions(self.agent))
+            self._policy = np.array([0.3, 0.7]) #np.full(self.game.num_actions(self.agent), 1/self.game.num_actions(self.agent))
         else:
             self._policy = initial
 
