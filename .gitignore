@@ -2,3 +2,4 @@ experiments/*
 tables/*
 *.pyc
 IQL_orig.ipynb
+experiments.zip
